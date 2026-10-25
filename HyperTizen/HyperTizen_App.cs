@@ -74,7 +74,7 @@ namespace HyperTizen
         public static class Configuration
         {
             public static string RPCServer = Preference.Contains("rpcServer") ? Preference.Get<string>("rpcServer") : null;
-            public static bool Enabled = bool.Parse(Preference.Get<string>("enabled"));
+            public static volatile bool Enabled = bool.Parse(Preference.Get<string>("enabled"));
         }
     }
 }
