@@ -141,9 +141,10 @@ namespace HyperTizen.WebSocket
                             continue;
                         }
 
+                        // Nach jedem Messblock sofort senden (statt erst nach allen Punkten).
                         // Das vorherige Bild wird noch gesendet, waehrend der TV schon
-                        // das naechste misst (Thread.Sleep in GetColors).
-                        Color[] colors = Capturer.GetColors();
+                        // den naechsten Block misst.
+                        Color[] colors = Capturer.CaptureNextBatch();
                         string image = Capturer.ToImage(colors);
 
                         Task previous = pendingSend;
