@@ -16,6 +16,11 @@ namespace HyperTizen
         private const int ImgHeight = 48;
         private const int BorderThick = 4;
 
+        // Dein Test zeigt: Unten und links laufen die LEDs gegenlaeufig zum Bild.
+        // true  = untere und linke Seite im Bild umdrehen (Korrektur)
+        // false = Originalverhalten
+        private static readonly bool FlipBottomAndLeft = true;
+
         // Einmal beim Start ermitteln, nicht bei jedem Native-Aufruf neu.
         private static readonly bool UseTizen7Api = DetectTizen7();
 
@@ -176,15 +181,10 @@ namespace HyperTizen
 
         #region Capture
 
+        // Komplettes Bild: alle Messbloecke nacheinander (z. B. fuer das letzte Bild beim Beenden).
         public static Color[] GetColors()
         {
-            CaptureLayout layout = _layout;
-            if (layout == null)
-            {
-                RebuildLayout();
-                layout = _layout;
-            }
-
+            CaptureLayout layout = GetLayout();
             if (layout == null)
             {
                 return new Color[_capturedPoints != null ? _capturedPoints.Length : 0];
@@ -192,44 +192,92 @@ namespace HyperTizen
 
             int total = layout.X.Length;
             int batchSize = _condition.ScreenCapturePoints;
-            int sleepMs = _condition.SleepMS;
-
-            Color[] colorData = new Color[total];
             if (batchSize <= 0)
             {
-                return colorData;
+                return new Color[total];
             }
 
-            // Der TV kann nur 'batchSize' Punkte gleichzeitig messen.
             for (int start = 0; start < total; start += batchSize)
             {
-                int count = Math.Min(batchSize, total - start);
-
-                for (int j = 0; j < count; j++)
-                {
-                    SetPosition(j, layout.X[start + j], layout.Y[start + j]);
-                }
-
-                if (sleepMs > 0)
-                {
-                    Thread.Sleep(sleepMs);
-                }
-
-                for (int k = 0; k < count; k++)
-                {
-                    int index = start + k;
-                    Color color;
-                    if (TryReadPixel(k, out color))
-                    {
-                        layout.LastGood[index] = color;
-                    }
-
-                    // Bei Fehlschlag den letzten guten Wert behalten (kein schwarzes Flackern).
-                    colorData[index] = layout.LastGood[index];
-                }
+                MeasureBatch(layout, start, Math.Min(batchSize, total - start));
             }
 
-            return colorData;
+            layout.Cursor = 0;
+            return (Color[])layout.LastGood.Clone();
+        }
+
+        // Misst nur den NAECHSTEN Block (ScreenCapturePoints Punkte) und liefert das aus den
+        // neuesten Werten aller Punkte zusammengesetzte Bild. Dadurch kann nach jedem Block
+        // gesendet werden, statt erst nach allen 16 Punkten zu warten. Das spart im Mittel
+        // etwa die halbe Zykluszeit an Verzoegerung.
+        public static Color[] CaptureNextBatch()
+        {
+            CaptureLayout layout = GetLayout();
+            if (layout == null)
+            {
+                return new Color[_capturedPoints != null ? _capturedPoints.Length : 0];
+            }
+
+            int total = layout.X.Length;
+            int batchSize = _condition.ScreenCapturePoints;
+            if (batchSize <= 0)
+            {
+                return new Color[total];
+            }
+
+            if (layout.Cursor >= total)
+            {
+                layout.Cursor = 0;
+            }
+
+            int count = Math.Min(batchSize, total - layout.Cursor);
+            MeasureBatch(layout, layout.Cursor, count);
+
+            layout.Cursor += count;
+            if (layout.Cursor >= total)
+            {
+                layout.Cursor = 0;
+            }
+
+            return (Color[])layout.LastGood.Clone();
+        }
+
+        private static CaptureLayout GetLayout()
+        {
+            CaptureLayout layout = _layout;
+            if (layout == null)
+            {
+                RebuildLayout();
+                layout = _layout;
+            }
+            return layout;
+        }
+
+        // Der TV kann nur 'count' Punkte gleichzeitig messen: Positionen setzen,
+        // Wartezeit des TVs abwarten, dann auslesen.
+        private static void MeasureBatch(CaptureLayout layout, int start, int count)
+        {
+            int sleepMs = _condition.SleepMS;
+
+            for (int j = 0; j < count; j++)
+            {
+                SetPosition(j, layout.X[start + j], layout.Y[start + j]);
+            }
+
+            if (sleepMs > 0)
+            {
+                Thread.Sleep(sleepMs);
+            }
+
+            for (int k = 0; k < count; k++)
+            {
+                Color color;
+                if (TryReadPixel(k, out color))
+                {
+                    // Bei Fehlschlag bleibt der letzte gute Wert stehen (kein schwarzes Flackern).
+                    layout.LastGood[start + k] = color;
+                }
+            }
         }
 
         private static bool TryReadPixel(int slot, out Color color)
@@ -276,11 +324,29 @@ namespace HyperTizen
                 DrawBorder(_canvas, new SKRect(0, 0, ImgWidth, BorderThick),
                     new SKPoint(ImgWidth, 0), sk[0], sk[1], sk[2], sk[3], sk[4]);
 
-                DrawBorder(_canvas, new SKRect(0, ImgHeight - BorderThick, ImgWidth, ImgHeight),
-                    new SKPoint(ImgWidth, 0), sk[12], sk[11], sk[10], sk[9], sk[8]);
+                // Unten: Original links->rechts = Punkt 12..8; umgedreht 8..12.
+                if (FlipBottomAndLeft)
+                {
+                    DrawBorder(_canvas, new SKRect(0, ImgHeight - BorderThick, ImgWidth, ImgHeight),
+                        new SKPoint(ImgWidth, 0), sk[8], sk[9], sk[10], sk[11], sk[12]);
+                }
+                else
+                {
+                    DrawBorder(_canvas, new SKRect(0, ImgHeight - BorderThick, ImgWidth, ImgHeight),
+                        new SKPoint(ImgWidth, 0), sk[12], sk[11], sk[10], sk[9], sk[8]);
+                }
 
-                DrawBorder(_canvas, new SKRect(0, 0, BorderThick, ImgHeight),
-                    new SKPoint(0, ImgHeight), sk[0], sk[15], sk[14], sk[13], sk[12]);
+                // Links: Original oben->unten = Punkt 0,15..12; umgedreht 12..15,0.
+                if (FlipBottomAndLeft)
+                {
+                    DrawBorder(_canvas, new SKRect(0, 0, BorderThick, ImgHeight),
+                        new SKPoint(0, ImgHeight), sk[12], sk[13], sk[14], sk[15], sk[0]);
+                }
+                else
+                {
+                    DrawBorder(_canvas, new SKRect(0, 0, BorderThick, ImgHeight),
+                        new SKPoint(0, ImgHeight), sk[0], sk[15], sk[14], sk[13], sk[12]);
+                }
 
                 DrawBorder(_canvas, new SKRect(ImgWidth - BorderThick, 0, ImgWidth, ImgHeight),
                     new SKPoint(0, ImgHeight), sk[4], sk[5], sk[6], sk[7], sk[8]);
@@ -325,6 +391,7 @@ namespace HyperTizen
             public readonly int[] X;
             public readonly int[] Y;
             public readonly Color[] LastGood;
+            public int Cursor;   // naechster Messblock fuer CaptureNextBatch
 
             public CaptureLayout(int[] x, int[] y)
             {
