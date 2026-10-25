@@ -249,9 +249,11 @@ namespace HyperTizen
 
         static SKColor ClampColor(Color color)
         {
-            byte r = (byte)Math.Min(color.R, 255);
-            byte g = (byte)Math.Min(color.G, 255);
-            byte b = (byte)Math.Min(color.B, 255);
+            byte Convert10BitTo8Bit(int value) => (byte)((Math.Clamp(value, 0, 1023) * 255) / 1023);
+            
+            byte r = Convert10BitTo8Bit(color.R);
+            byte g = Convert10BitTo8Bit(color.G);
+            byte b = Convert10BitTo8Bit(color.B);
             return new SKColor(r, g, b);
         }
     }
