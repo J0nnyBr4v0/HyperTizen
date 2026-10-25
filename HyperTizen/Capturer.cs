@@ -29,22 +29,22 @@ namespace HyperTizen
         }
 
         private static CapturePoint[] _capturedPoints = new CapturePoint[] {
-            new CapturePoint(0.21, 0.05),
-            new CapturePoint(0.45, 0.05),
-            new CapturePoint(0.7, 0.05),
-            new CapturePoint(0.93, 0.07),
+            new CapturePoint(0.05, 0.05),
+            new CapturePoint(0.275, 0.05),
+            new CapturePoint(0.5, 0.05),
+            new CapturePoint(0.725, 0.05),
+            new CapturePoint(0.95, 0.05),
             new CapturePoint(0.95, 0.275),
             new CapturePoint(0.95, 0.5),
-            new CapturePoint(0.95, 0.8),
-            new CapturePoint(0.79, 0.95),
-            new CapturePoint(0.65, 0.95),
-            new CapturePoint(0.35, 0.95),
-            new CapturePoint(0.15, 0.95),
+            new CapturePoint(0.95, 0.725),
+            new CapturePoint(0.95, 0.95),
+            new CapturePoint(0.725, 0.95),
+            new CapturePoint(0.5, 0.95),
+            new CapturePoint(0.275, 0.95),
+            new CapturePoint(0.05, 0.95),
             new CapturePoint(0.05, 0.725),
-            new CapturePoint(0.05, 0.4),
-            new CapturePoint(0.05, 0.2),
-            new CapturePoint(0.35, 0.5),
-            new CapturePoint(0.65, 0.5)
+            new CapturePoint(0.05, 0.5),
+            new CapturePoint(0.05, 0.275)
         };
         
         [DllImport("/usr/lib/libvideoenhance.so", CallingConvention = CallingConvention.Cdecl, EntryPoint = "cs_ve_get_rgb_measure_condition")]
@@ -176,47 +176,63 @@ namespace HyperTizen
 
         public static string ToImage(Color[] colors)
         {
-            using (var image = new SKBitmap(64, 48))
+
+            int imgWidth = 64;
+            int imgHeight = 48;
+            int borderThick = 4;
+            
+            using (var image = new SKBitmap(imgWidth, imgHeight))
             {
-                for (int x = 0; x < 64; x++)
-                {
-                    Color color = colors[x / 16];
-                    SKColor sKColor = ClampColor(color);
-                    for (int y = 0; y < 4; y++)
-                    {
-                        image.SetPixel(x, y, sKColor);
-                    }
-                }
 
-                for (int x = 0; x < 64; x++)
-                {
-                    Color color = colors[x / 16 + 7];
-                    SKColor sKColor = ClampColor(color);
-                    for (int y = 44; y < 48; y++)
-                    {
-                        image.SetPixel(x, y, sKColor);
-                    }
-                }
+                SKColor[] skColors = colors.Select(ClampColor).ToArray();
 
-                for (int y = 0; y < 48; y++)
+                using (var canvas = new SKCanvas(image))
                 {
-                    Color color = colors[11 + y / 16];
-                    SKColor sKColor = ClampColor(color);
-                    for (int x = 0; x < 3; x++)
-                    {
-                        image.SetPixel(x, y, sKColor);
-                    }
-                }
+                    
+                    var shader_top = SKShader.CreateLinearGradient(
+                        new SKPoint(0, 0),
+                        new SKPoint(imgWidth, 0),
+                        new SKColor[] { skColors[0], skColors[1], skColors[2], skColors[3], skColors[4] },
+                        SKShaderTileMode.Clamp
+                    );
 
-                for (int y = 0; y < 48; y++)
-                {
-                    Color color = colors[4 + y / 16];
-                    SKColor sKColor = ClampColor(color);
-                    for (int x = 61; x < 64; x++)
+                    var shader_bottom = SKShader.CreateLinearGradient(
+                        new SKPoint(0, 0),
+                        new SKPoint(imgWidth, 0),
+                        new SKColor[] { skColors[12], skColors[11], skColors[10], skColors[9], skColors[8] },
+                        SKShaderTileMode.Clamp
+                    );
+
+                    var shader_right = SKShader.CreateLinearGradient(
+                        new SKPoint(0, 0),
+                        new SKPoint(0, imgHeight),
+                        new SKColor[] { skColors[4], skColors[5], skColors[6], skColors[7], skColors[8] },
+                        SKShaderTileMode.Clamp
+                    );
+
+                    var shader_left = SKShader.CreateLinearGradient(
+                        new SKPoint(0, 0),
+                        new SKPoint(0, imgHeight),
+                        new SKColor[] { skColors[0], skColors[15], skColors[14], skColors[13], skColors[12] },
+                        SKShaderTileMode.Clamp
+                    );
+                    
+                    var paint = new SKPaint
                     {
-                        image.SetPixel(x, y, sKColor);
-                    }
-                }
+                        Style = SKPaintStyle.Fill
+                    };
+                    
+                    paint.Shader = shader_top;
+                    canvas.DrawRect(new SKRect(0, 0, imgWidth, borderThick), paint);
+                    
+                    paint.Shader = shader_bottom;
+                    canvas.DrawRect(new SKRect(0, imgHeight - borderThick, imgWidth, imgHeight), paint);
+
+                    paint.Shader = shader_left;
+                    canvas.DrawRect(new SKRect(0, 0, borderThick, imgHeight), paint);
+
+                    paint.Shader = shader_right;
+                    canvas.DrawRect(new SKRect(imgWidth - borderThick, 0, imgWidth, imgHeight), paint);
 
                 using (var memoryStream = new MemoryStream())
                 {
